@@ -1,6 +1,6 @@
 # Pixiv 自定义关键词屏蔽脚本
 
-[![Install this script with Tampermonkey](https://www.tampermonkey.net/images/install_on_tampermonkey.png)](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js)
+[![Install Pixiv Custom Filter](https://img.shields.io/badge/Install-%E6%B2%B9%E7%8C%BF%E8%84%9A%E6%9C%AC-brightgreen?style=for-the-badge&logo=greasyfork)](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js)
 
 这是一个用于 Pixiv 的用户脚本，支持根据自定义的关键词、作者名和标签进行三重过滤，屏蔽不想看到的内容。  
 支持在页面内配置关键词，并且可以导入导出设置。
