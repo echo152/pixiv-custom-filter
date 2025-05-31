@@ -5,7 +5,7 @@
 
 pixiv自带的屏蔽太垃圾，一堆污染词条的ai文，屏蔽不过来，于是写了个油猴来屏蔽，一劳永逸了。代码很简单，自己看着配置一下去屏蔽吧。
 给朋友打个广告，如果有帮到你，可以去灌注一下雾莉静子
-[![Bilibili](https://i2.hdslb.com/bfs/face/9c9a725f2e0d86b9efdc7cbd007ca2c4be30e2a8.jpg@100w_100h_1c.webp)](https://space.bilibili.com/611566)
+[![Bilibili](https://i1.hdslb.com/bfs/face/a0854b13ffd603c12c54ab00d97f4bc4bb50d138.jpg@128w_128h_1c_1s.webp)](https://space.bilibili.com/611566)
 
 ---
 
