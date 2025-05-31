@@ -1,6 +1,6 @@
 # Pixiv 自定义关键词屏蔽脚本
 
-[![Install this script with Tampermonkey](https://img.shields.io/badge/Install%20Tampermonkey-brightgreen?style=for-the-badge&logo=tampermonkey)](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js)
+[![安装脚本](https://img.shields.io/badge/Install%20Tampermonkey-brightgreen?style=for-the-badge&logo=tampermonkey)](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js)
 <br>
 ⬆️ **点击上方按钮即可安装脚本**
 
