@@ -43,7 +43,7 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 1. 搜索pixiv小说，比如搜索"催眠"，网页左侧就会跳出两个按钮（如果没出来就刷新，刷新也没出来就确认一下油猴是否正常启用）
 ![预览图](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/image/1.png)
 
-2.  点击"关键词配置"，可以弹出配置界面，自定义输入要屏蔽的关键字，然后保存。比如这里我们屏蔽"lsyht"就在作者关键字里输入lsyht。
+2.  点击"关键词配置"，可以弹出配置界面，自定义输入要屏蔽的关键字，然后保存。比如这里我们屏蔽"lsyht"就在作者关键字里输入lsyht，如果有多个就输完后回车换行。
 ![预览图](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/image/2.png)
 
 不想一个一个手动加的话，可以直接导入我文件里的,打开1.txt复制粘贴然后导入就行
