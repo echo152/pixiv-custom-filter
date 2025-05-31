@@ -1,6 +1,6 @@
-# Pixiv 自定义关键词屏蔽脚本
+# Pixiv小说自定义关键词屏蔽脚本
 
-## 1. 安装 Tampermonkey（油猴）
+## 1. 安装 Tampermonkey（油猴）  （已安装可跳过）
 
 Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据你使用的浏览器，按照以下步骤安装：
 
@@ -10,8 +10,6 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 - **Firefox**  
   访问 [Firefox Add-ons - Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/) ，点击「添加到 Firefox」并确认安装。
 
-- **Safari**  
-  访问 [Tampermonkey 官网](https://www.tampermonkey.net/) ，根据指引安装适合 Safari 的版本。
 
 - **其他浏览器**  
   访问 [Tampermonkey 官网](https://www.tampermonkey.net/) ，选择适合你浏览器的版本下载安装。
@@ -24,23 +22,20 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 
 <a href="https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js" target="_blank" rel="noopener noreferrer">
   <img src="https://img.shields.io/badge/Install%20Tampermonkey-brightgreen?style=for-the-badge&logo=tampermonkey" alt="Install Tampermonkey Script">
-</a> ⬆️ **点击按钮安装**
+</a> 
 
 点击按钮后，会跳转到Tampermonkey的脚本安装页面，点击「安装」即可。
 
 ---
-## 安装说明
+## 使用说明
 
-1. 安装油猴插件（Tampermonkey ）
-2. 点击上方 **安装脚本** 按钮，跳转到油猴的安装页面
-3. 确认安装，安装完成后刷新 Pixiv 标签页即可生效
-4. 点击页面左侧的“关键词设置”按钮，可以自定义屏蔽关键词、作者、标签
+1. 搜索pixiv小说，比如搜索"催眠"，网页左侧就会跳出两个按钮（如果没出来就刷新，刷新也没出来就确认一下油猴是否正常启用）
 
----
+2.  点击"关键词配置"，可以弹出配置界面，自定义输入要屏蔽的关键字，然后保存
 
-## 使用截图
+3.  点击"Hide Ai",就会自动隐藏符合关键字的小说，再点击一下就会全部显示。
 
-（这里可以插入脚本运行截图，给用户直观印象）
+
 
 ---
 
