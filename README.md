@@ -46,7 +46,8 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 2.  点击"关键词配置"，可以弹出配置界面，自定义输入要屏蔽的关键字，然后保存。比如这里我们屏蔽"lsyht"就在作者关键字里输入lsyht。
 ![预览图](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/image/2.png)
 
-不想一个一个手动加的话，可以直接导入我文件里的,打开1.txt复制粘贴就行
+不想一个一个手动加的话，可以直接导入我文件里的,打开1.txt复制粘贴然后导入就行
+
 配置文件链接：[1.txt](https://github.com/echo152/pixiv-custom-filter/blob/main/1.txt)
 
 3.  点击"Hide Ai",就会自动隐藏符合关键字的小说，再点击一下就会全部显示。
