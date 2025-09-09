@@ -52,7 +52,7 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 3.  点击"Hide Ai",就会自动隐藏符合关键字的小说，再点击一下就会全部显示。
 ![预览图](https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/image/3.png)
 
-**备注：以系列为单位搜素 这个要取消掉 没有做适配**
+**备注：“以系列为单位搜索” 这个要取消掉 没有做适配**
 
 
 
