@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Pixiv屏蔽关键词/作者/标签（三重过滤）+设置面板+导入导出
-// @namespace    http://tampermonkey.net/
-// @version      2025-05-31
-// @description  屏蔽含有指定关键词、作者名或标签的 Pixiv 项目，支持自定义关键词和导入导出设置。
-// @author       灌注雾莉静子喵
-// @match        https://www.pixiv.net/tags*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
-// @grant        GM_addStyle
+// @name          Pixiv屏蔽关键词/作者/标签（三重过滤）+字数限制+设置面板+导入导出
+// @namespace     http://tampermonkey.net/
+// @version       2025-07-12
+// @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目，支持设置面板、导入导出配置、控制台打印
+// @author        111
+// @match         https://www.pixiv.net/tags*
+// @icon          https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
+// @grant         GM_addStyle
 // ==/UserScript==
 
 (function() {
@@ -15,14 +15,16 @@
     const defaultConfig = {
         contentKeywords: ['无限制ai', 'ai风月'],
         authorKeywords: ['（', '('],
-        tagKeywords: ['语c', '男同']
+        tagKeywords: ['语c', '男同'],
+        minTextLength: 0,
+        maxTextLength: 10000
     };
 
     function getConfig() {
         const saved = localStorage.getItem('pixivFilterConfig');
         if (saved) {
             try {
-                return JSON.parse(saved);
+                return { ...defaultConfig, ...JSON.parse(saved) };
             } catch (e) {
                 console.warn('配置解析失败，使用默认值');
             }
@@ -73,7 +75,12 @@
         #pixivConfigPanel textarea {
             width: 100%;
             height: 60px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
+        }
+
+        #pixivConfigPanel input[type=number] {
+            width: 80px;
+            margin-bottom: 12px;
         }
 
         #pixivConfigPanel button {
@@ -81,7 +88,6 @@
         }
     `);
 
-    // 插入设置面板
     const configPanel = document.createElement('div');
     configPanel.id = 'pixivConfigPanel';
     configPanel.innerHTML = `
@@ -91,6 +97,9 @@
         <textarea id="authorInput">${config.authorKeywords.join('\n')}</textarea>
         <div><strong>标签关键词：</strong></div>
         <textarea id="tagInput">${config.tagKeywords.join('\n')}</textarea>
+        <div><strong>最小字数：</strong><input type="number" id="minTextLength" value="${config.minTextLength}"></div>
+        <div><strong>最大字数：</strong><input type="number" id="maxTextLength" value="${config.maxTextLength}"></div>
+        <br/>
         <button id="saveBtn">保存</button>
         <button id="exportBtn">导出</button>
         <button id="importBtn">导入</button>
@@ -98,7 +107,6 @@
     `;
     document.body.appendChild(configPanel);
 
-    // 插入按钮
     const toggleButton = document.createElement('button');
     toggleButton.id = 'pixivFilterBtn';
     toggleButton.textContent = 'Hide AI';
@@ -115,7 +123,13 @@
 
     function containsKeyword(text, keywords) {
         const lower = text.toLowerCase();
-        return keywords.some(k => lower.includes(k.toLowerCase()));
+        const foundKeywords = [];
+        keywords.forEach(k => {
+            if (lower.includes(k.toLowerCase())) {
+                foundKeywords.push(k);
+            }
+        });
+        return foundKeywords;
     }
 
     function getTagTexts(li) {
@@ -140,13 +154,38 @@
             const contentElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div');
             const contentText = contentElem ? contentElem.textContent.trim() : '';
 
+            const textLengthElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div > span');
+
+
+            const textLength = textLengthElem ? parseInt(textLengthElem.textContent.replace(/[^\d]/g, '')) : 0;
+
             const tags = getTagTexts(li);
 
-            const matchTags = tags.some(tag => containsKeyword(tag, config.tagKeywords));
-            const matchAuthor = containsKeyword(authorName, config.authorKeywords);
-            const matchContent = containsKeyword(contentText, config.contentKeywords);
+            const matchedTags = containsKeyword(tags.join(' '), config.tagKeywords);
+            const matchedAuthor = containsKeyword(authorName, config.authorKeywords);
+            const matchedContent = containsKeyword(contentText, config.contentKeywords);
 
-            li.classList.toggle('hidden-by-ai-toggle', isHidden && (matchAuthor || matchContent || matchTags));
+            const lengthTooShort = textLength < config.minTextLength;
+            const lengthTooLong = textLength > config.maxTextLength;
+
+            const shouldHide = isHidden && (
+                matchedAuthor.length > 0 ||
+                matchedContent.length > 0 ||
+                matchedTags.length > 0 ||
+                lengthTooShort || lengthTooLong
+            );
+
+            li.classList.toggle('hidden-by-ai-toggle', shouldHide);
+
+            if (shouldHide) {
+                let logMessage = '隐藏作品：';
+                if (matchedContent.length > 0) logMessage += `[内容: ${matchedContent.join(', ')}] `;
+                if (matchedAuthor.length > 0) logMessage += `[作者: ${matchedAuthor.join(', ')}] `;
+                if (matchedTags.length > 0) logMessage += `[标签: ${matchedTags.join(', ')}] `;
+                if (lengthTooShort) logMessage += `[字数过少: ${textLength}] `;
+                if (lengthTooLong) logMessage += `[字数过多: ${textLength}] `;
+                console.log(authorName + ' ' + logMessage);
+            }
         });
     }
 
@@ -170,6 +209,8 @@
         config.contentKeywords = configPanel.querySelector('#contentInput').value.split('\n').map(s => s.trim()).filter(Boolean);
         config.authorKeywords = configPanel.querySelector('#authorInput').value.split('\n').map(s => s.trim()).filter(Boolean);
         config.tagKeywords = configPanel.querySelector('#tagInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+        config.minTextLength = parseInt(configPanel.querySelector('#minTextLength').value) || 0;
+        config.maxTextLength = parseInt(configPanel.querySelector('#maxTextLength').value) || 100000;
         saveConfig(config);
         init();
         alert('已保存设置');
@@ -185,7 +226,7 @@
         if (input) {
             try {
                 const imported = JSON.parse(input);
-                config = imported;
+                config = { ...defaultConfig, ...imported };
                 saveConfig(config);
                 location.reload();
             } catch (e) {
