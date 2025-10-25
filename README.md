@@ -79,4 +79,4 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 
 ---
 
-![Alt](https://repobeats.axiom.co/api/embed/echo152/pixiv-custom-filter.svg)
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=echo152.pixiv-custom-filter)
