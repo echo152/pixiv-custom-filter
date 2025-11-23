@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name          Pixiv屏蔽简介/作者/标签/标题+字数限制+屏蔽无简介+设置面板+导入导出
+// @name          Pixiv小说自定义屏蔽
 // @namespace     http://tampermonkey.net/
-// @version       2025-11-23
+// @version       2025-11-23.1
 // @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目，支持设置面板、导入导出配置、控制台打印
 // @author        111
 // @match         https://www.pixiv.net/tags*
@@ -182,7 +182,7 @@
             const lengthTooShort = textLength < config.minTextLength;
             const lengthTooLong = textLength > config.maxTextLength;
 
-            const noDescription = config.hideNoDescription && (!contentElem || contentText.length === 0||contentElem.innerHTML.includes("svg"));
+            const noDescription = config.hideNoDescription && (!contentElem || contentText.length === 0||contentElem.innerHTML.includes("sc-99dab233"));
 
             const shouldHide = isHidden && (
                 matchedAuthor.length > 0 ||
@@ -268,3 +268,4 @@
 
     init();
 })();
+
