@@ -1,12 +1,16 @@
 // ==UserScript==
-// @name          Pixiv屏蔽关键词/作者/标签（三重过滤）+字数限制+设置面板+导入导出
+// @name          Pixiv屏蔽简介/作者/标签/标题+字数限制+屏蔽无简介+设置面板+导入导出
 // @namespace     http://tampermonkey.net/
-// @version       2025-07-12
+// @version       2025-11-23
 // @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目，支持设置面板、导入导出配置、控制台打印
 // @author        111
 // @match         https://www.pixiv.net/tags*
 // @icon          https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
 // @grant         GM_addStyle
+// @run-at       document-start // 尽早运行，确保在任何 fetch 发生之前完成劫持
+// @downloadURL   https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
+// @updateURL     https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
+// @license MIT
 // ==/UserScript==
 
 (function() {
@@ -17,7 +21,8 @@
         authorKeywords: ['（', '('],
         tagKeywords: ['语c', '男同'],
         minTextLength: 0,
-        maxTextLength: 10000
+        maxTextLength: 10000,
+        hideNoDescription: false
     };
 
     function getConfig() {
@@ -91,7 +96,7 @@
     const configPanel = document.createElement('div');
     configPanel.id = 'pixivConfigPanel';
     configPanel.innerHTML = `
-        <div><strong>内容关键词：</strong></div>
+        <div><strong>内容关键词（标题+简介）：</strong></div>
         <textarea id="contentInput">${config.contentKeywords.join('\n')}</textarea>
         <div><strong>作者关键词：</strong></div>
         <textarea id="authorInput">${config.authorKeywords.join('\n')}</textarea>
@@ -99,6 +104,10 @@
         <textarea id="tagInput">${config.tagKeywords.join('\n')}</textarea>
         <div><strong>最小字数：</strong><input type="number" id="minTextLength" value="${config.minTextLength}"></div>
         <div><strong>最大字数：</strong><input type="number" id="maxTextLength" value="${config.maxTextLength}"></div>
+        <label style="display:block;margin:8px 0;">
+            <input type="checkbox" id="hideNoDescription"${config.hideNoDescription ? ' checked' : ''}>
+            屏蔽无简介小说
+        </label>
         <br/>
         <button id="saveBtn">保存</button>
         <button id="exportBtn">导出</button>
@@ -146,12 +155,14 @@
         return document.querySelectorAll('#__next ul li');
     }
 
+
     function toggleElements() {
         observedElements.forEach(li => {
+            const titleElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(1) > div > a');
             const authorElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(2) > a');
             const authorName = authorElem ? authorElem.textContent.trim() : '';
 
-            const contentElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div');
+            const contentElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) >div>div>div');
             const contentText = contentElem ? contentElem.textContent.trim() : '';
 
             const textLengthElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div > span');
@@ -161,18 +172,25 @@
 
             const tags = getTagTexts(li);
 
+            const titleText = titleElem ? titleElem.textContent.trim() : '';
+
             const matchedTags = containsKeyword(tags.join(' '), config.tagKeywords);
             const matchedAuthor = containsKeyword(authorName, config.authorKeywords);
             const matchedContent = containsKeyword(contentText, config.contentKeywords);
+            const matchedTitle = containsKeyword(titleText, config.contentKeywords);
 
             const lengthTooShort = textLength < config.minTextLength;
             const lengthTooLong = textLength > config.maxTextLength;
 
+            const noDescription = config.hideNoDescription && (!contentElem || contentText.length === 0||contentElem.innerHTML.includes("svg"));
+
             const shouldHide = isHidden && (
                 matchedAuthor.length > 0 ||
                 matchedContent.length > 0 ||
+                matchedTitle.length > 0 ||
                 matchedTags.length > 0 ||
-                lengthTooShort || lengthTooLong
+                lengthTooShort || lengthTooLong ||
+                noDescription
             );
 
             li.classList.toggle('hidden-by-ai-toggle', shouldHide);
@@ -180,10 +198,12 @@
             if (shouldHide) {
                 let logMessage = '隐藏作品：';
                 if (matchedContent.length > 0) logMessage += `[内容: ${matchedContent.join(', ')}] `;
+                if (matchedTitle.length > 0) logMessage += `[标题: ${matchedTitle.join(', ')}] `;
                 if (matchedAuthor.length > 0) logMessage += `[作者: ${matchedAuthor.join(', ')}] `;
                 if (matchedTags.length > 0) logMessage += `[标签: ${matchedTags.join(', ')}] `;
                 if (lengthTooShort) logMessage += `[字数过少: ${textLength}] `;
                 if (lengthTooLong) logMessage += `[字数过多: ${textLength}] `;
+                if (noDescription) logMessage += '[无简介] ';
                 console.log(authorName + ' ' + logMessage);
             }
         });
@@ -211,6 +231,7 @@
         config.tagKeywords = configPanel.querySelector('#tagInput').value.split('\n').map(s => s.trim()).filter(Boolean);
         config.minTextLength = parseInt(configPanel.querySelector('#minTextLength').value) || 0;
         config.maxTextLength = parseInt(configPanel.querySelector('#maxTextLength').value) || 100000;
+        config.hideNoDescription = configPanel.querySelector('#hideNoDescription').checked;
         saveConfig(config);
         init();
         alert('已保存设置');
