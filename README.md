@@ -1,4 +1,4 @@
-# Pixiv小说自定义关键词屏蔽脚本
+# Pixiv小说自定义关键词屏蔽脚本 ![Visitors](https://visitor-badge.laobi.icu/badge?page_id=echo152.pixiv-custom-filter)
 
 
 ## 前言
@@ -88,4 +88,4 @@ Tampermonkey 是浏览器扩展，用于管理和运行用户脚本。请根据�
 
 ---
 
-![Visitors](https://visitor-badge.laobi.icu/badge?page_id=echo152.pixiv-custom-filter)
+
