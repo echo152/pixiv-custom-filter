@@ -1,23 +1,25 @@
 // ==UserScript==
 // @name          Pixiv小说自定义屏蔽
 // @namespace     http://tampermonkey.net/
-// @version       2025-11-23.1
-// @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目，支持设置面板、导入导出配置、控制台打印
-// @author        111
+// @version       2026.3.22
+// @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目（系列名已合并到内容关键词中），支持设置面板、导入导出配置、控制台打印
+// @author        echo
 // @match         https://www.pixiv.net/tags*
 // @icon          https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
 // @grant         GM_addStyle
-// @run-at       document-start // 尽早运行，确保在任何 fetch 发生之前完成劫持
+// @run-at       document-start
 // @downloadURL   https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
 // @updateURL     https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
-// @license MIT
+// @license       MIT
 // ==/UserScript==
+
+
 
 (function() {
     'use strict';
 
     const defaultConfig = {
-        contentKeywords: ['无限制ai', 'ai风月'],
+        contentKeywords: ['无限制ai', 'ai风月', '五等分的雨姐'], // 示例：可直接在此加入系列名关键词
         authorKeywords: ['（', '('],
         tagKeywords: ['语c', '男同'],
         minTextLength: 0,
@@ -96,7 +98,7 @@
     const configPanel = document.createElement('div');
     configPanel.id = 'pixivConfigPanel';
     configPanel.innerHTML = `
-        <div><strong>内容关键词（标题+简介）：</strong></div>
+        <div><strong>内容关键词（标题 + 简介 + 系列名）：</strong></div>
         <textarea id="contentInput">${config.contentKeywords.join('\n')}</textarea>
         <div><strong>作者关键词：</strong></div>
         <textarea id="authorInput">${config.authorKeywords.join('\n')}</textarea>
@@ -131,10 +133,11 @@
     let observedElements = [];
 
     function containsKeyword(text, keywords) {
+        if (!keywords || keywords.length === 0) return [];
         const lower = text.toLowerCase();
         const foundKeywords = [];
         keywords.forEach(k => {
-            if (lower.includes(k.toLowerCase())) {
+            if (k && lower.includes(k.toLowerCase())) {
                 foundKeywords.push(k);
             }
         });
@@ -155,39 +158,44 @@
         return document.querySelectorAll('#__next ul li');
     }
 
-
     function toggleElements() {
         observedElements.forEach(li => {
+            // === 元素提取 ===
             const titleElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(1) > div > a');
             const authorElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(2) > a');
             const authorName = authorElem ? authorElem.textContent.trim() : '';
 
-            const contentElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) >div>div>div');
-            const contentText = contentElem ? contentElem.textContent.trim() : '';
-
             const textLengthElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div > span');
-
-
             const textLength = textLengthElem ? parseInt(textLengthElem.textContent.replace(/[^\d]/g, '')) : 0;
 
             const tags = getTagTexts(li);
-
             const titleText = titleElem ? titleElem.textContent.trim() : '';
 
+            // 新增：系列名提取（稳定类）
+            const seriesElem = li.querySelector('a.gtm-novel-searchpage-result-series-title');
+            const seriesName = seriesElem ? seriesElem.textContent.trim() : '';
+
+            // 简介提取（可靠方式）
+            const descriptionContainer = li.querySelector('div.sc-6d7a6a5e-20');
+            const contentText = descriptionContainer ? descriptionContainer.textContent.trim() : '';
+
+            // === 匹配判断（系列名已合并到 contentKeywords）===
             const matchedTags = containsKeyword(tags.join(' '), config.tagKeywords);
             const matchedAuthor = containsKeyword(authorName, config.authorKeywords);
             const matchedContent = containsKeyword(contentText, config.contentKeywords);
             const matchedTitle = containsKeyword(titleText, config.contentKeywords);
+            const matchedSeries = containsKeyword(seriesName, config.contentKeywords);   // ← 合并到内容关键词
 
             const lengthTooShort = textLength < config.minTextLength;
             const lengthTooLong = textLength > config.maxTextLength;
 
-            const noDescription = config.hideNoDescription && (!contentElem || contentText.length === 0||contentElem.innerHTML.includes("sc-99dab233"));
+            const noDescription = config.hideNoDescription && contentText.length === 0;
 
             const shouldHide = isHidden && (
                 matchedAuthor.length > 0 ||
                 matchedContent.length > 0 ||
                 matchedTitle.length > 0 ||
+                matchedSeries.length > 0 ||          // 系列名现在也走内容关键词
                 matchedTags.length > 0 ||
                 lengthTooShort || lengthTooLong ||
                 noDescription
@@ -199,12 +207,13 @@
                 let logMessage = '隐藏作品：';
                 if (matchedContent.length > 0) logMessage += `[内容: ${matchedContent.join(', ')}] `;
                 if (matchedTitle.length > 0) logMessage += `[标题: ${matchedTitle.join(', ')}] `;
+                if (matchedSeries.length > 0) logMessage += `[系列: ${matchedSeries.join(', ')}] `;
                 if (matchedAuthor.length > 0) logMessage += `[作者: ${matchedAuthor.join(', ')}] `;
                 if (matchedTags.length > 0) logMessage += `[标签: ${matchedTags.join(', ')}] `;
                 if (lengthTooShort) logMessage += `[字数过少: ${textLength}] `;
                 if (lengthTooLong) logMessage += `[字数过多: ${textLength}] `;
                 if (noDescription) logMessage += '[无简介] ';
-                console.log(authorName + ' ' + logMessage);
+                console.log(authorName + ' ' + logMessage + `（系列：${seriesName}）`);
             }
         });
     }
@@ -234,7 +243,7 @@
         config.hideNoDescription = configPanel.querySelector('#hideNoDescription').checked;
         saveConfig(config);
         init();
-        alert('已保存设置');
+        alert('已保存设置（系列名已合并到“内容关键词”中，无需单独输入）');
     });
 
     configPanel.querySelector('#exportBtn').addEventListener('click', () => {
@@ -268,4 +277,3 @@
 
     init();
 })();
-
