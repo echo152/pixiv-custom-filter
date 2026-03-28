@@ -1,25 +1,23 @@
 // ==UserScript==
-// @name          Pixiv小说自定义屏蔽
-// @namespace     http://tampermonkey.net/
-// @version       2026.3.22
-// @description   屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目（系列名已合并到内容关键词中），支持设置面板、导入导出配置、控制台打印
-// @author        echo
-// @match         https://www.pixiv.net/tags*
-// @icon          https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
-// @grant         GM_addStyle
+// @name         Pixiv小说自定义屏蔽26.3.28
+// @namespace    http://tampermonkey.net/
+// @version      2026.3.28
+// @description  屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目（系列名已合并到内容关键词中），支持设置面板、导入导出配置、控制台打印
+// @author       echo
+// @match        https://www.pixiv.net/tags*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
+// @grant        GM_addStyle
 // @run-at       document-start
-// @downloadURL   https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
-// @updateURL     https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
-// @license       MIT
+// @downloadURL  https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
+// @updateURL    https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
+// @license      MIT
 // ==/UserScript==
 
-
-
-(function() {
+(function () {
     'use strict';
 
     const defaultConfig = {
-        contentKeywords: ['无限制ai', 'ai风月', '五等分的雨姐'], // 示例：可直接在此加入系列名关键词
+        contentKeywords: ['无限制ai', 'ai风月', '五等分的雨姐'],
         authorKeywords: ['（', '('],
         tagKeywords: ['语c', '男同'],
         minTextLength: 0,
@@ -61,9 +59,7 @@
         }
         #pixivFilterBtn { top: 50%; }
         #pixivConfigBtn { top: 60%; background: #2196F3; }
-
         .hidden-by-ai-toggle { display: none !important; }
-
         #pixivConfigPanel {
             position: fixed;
             top: 120px;
@@ -78,18 +74,15 @@
             display: none;
             font-size: 14px;
         }
-
         #pixivConfigPanel textarea {
             width: 100%;
             height: 60px;
             margin-bottom: 12px;
         }
-
         #pixivConfigPanel input[type=number] {
             width: 80px;
             margin-bottom: 12px;
         }
-
         #pixivConfigPanel button {
             margin-right: 8px;
         }
@@ -158,6 +151,28 @@
         return document.querySelectorAll('#__next ul li');
     }
 
+    function getDescriptionText(li) {
+        // 优先使用你示例中的最新类名
+        let container = li.querySelector('div.sc-d3041fc-20') ||
+                        li.querySelector('div[class*="sc-d3041fc-20"]') ||
+                        li.querySelector('.charcoal-text-ellipsis[data-line-limit="2"]');
+
+        if (container) {
+            return container.textContent.trim();
+        }
+
+        // 兜底：查找所有可能包含简介的 ellipsis 元素
+        const ellipsisList = li.querySelectorAll('div[style*="--charcoal-text-ellipsis"], .charcoal-text-ellipsis');
+        for (let el of ellipsisList) {
+            const txt = el.textContent.trim();
+            // 避免把标题或短标签误判为简介
+            if (txt && txt.length > 8) {
+                return txt;
+            }
+        }
+        return '';
+    }
+
     function toggleElements() {
         observedElements.forEach(li => {
             // === 元素提取 ===
@@ -171,33 +186,37 @@
             const tags = getTagTexts(li);
             const titleText = titleElem ? titleElem.textContent.trim() : '';
 
-            // 新增：系列名提取（稳定类）
+            // 系列名
             const seriesElem = li.querySelector('a.gtm-novel-searchpage-result-series-title');
             const seriesName = seriesElem ? seriesElem.textContent.trim() : '';
 
-            // 简介提取（可靠方式）
-            const descriptionContainer = li.querySelector('div.sc-6d7a6a5e-20');
-            const contentText = descriptionContainer ? descriptionContainer.textContent.trim() : '';
+            // === 改进后的简介提取 ===
+            const contentText = getDescriptionText(li);
 
-            // === 匹配判断（系列名已合并到 contentKeywords）===
+            // === 匹配判断 ===
             const matchedTags = containsKeyword(tags.join(' '), config.tagKeywords);
             const matchedAuthor = containsKeyword(authorName, config.authorKeywords);
             const matchedContent = containsKeyword(contentText, config.contentKeywords);
             const matchedTitle = containsKeyword(titleText, config.contentKeywords);
-            const matchedSeries = containsKeyword(seriesName, config.contentKeywords);   // ← 合并到内容关键词
+            const matchedSeries = containsKeyword(seriesName, config.contentKeywords);
 
             const lengthTooShort = textLength < config.minTextLength;
             const lengthTooLong = textLength > config.maxTextLength;
 
-            const noDescription = config.hideNoDescription && contentText.length === 0;
+            // 改进后的无简介判断
+            const noDescription = config.hideNoDescription &&
+                (contentText.length === 0 ||
+                 contentText.length < 8 ||
+                 /^[\s　]*$/.test(contentText));
 
             const shouldHide = isHidden && (
                 matchedAuthor.length > 0 ||
                 matchedContent.length > 0 ||
                 matchedTitle.length > 0 ||
-                matchedSeries.length > 0 ||          // 系列名现在也走内容关键词
+                matchedSeries.length > 0 ||
                 matchedTags.length > 0 ||
-                lengthTooShort || lengthTooLong ||
+                lengthTooShort ||
+                lengthTooLong ||
                 noDescription
             );
 
@@ -212,8 +231,10 @@
                 if (matchedTags.length > 0) logMessage += `[标签: ${matchedTags.join(', ')}] `;
                 if (lengthTooShort) logMessage += `[字数过少: ${textLength}] `;
                 if (lengthTooLong) logMessage += `[字数过多: ${textLength}] `;
-                if (noDescription) logMessage += '[无简介] ';
-                console.log(authorName + ' ' + logMessage + `（系列：${seriesName}）`);
+                if (noDescription) logMessage += `[无简介 | 长度:${contentText.length}] `;
+
+                console.log(`%c${authorName} ${logMessage}（系列：${seriesName}）`, 'color: #d32f2f;');
+                console.log(`简介预览: "${contentText.substring(0, 80)}${contentText.length > 80 ? '...' : ''}"`);
             }
         });
     }
@@ -223,6 +244,7 @@
         toggleElements();
     }
 
+    // 按钮事件
     toggleButton.addEventListener('click', function () {
         isHidden = !isHidden;
         toggleButton.textContent = isHidden ? 'Show AI' : 'Hide AI';
@@ -241,6 +263,7 @@
         config.minTextLength = parseInt(configPanel.querySelector('#minTextLength').value) || 0;
         config.maxTextLength = parseInt(configPanel.querySelector('#maxTextLength').value) || 100000;
         config.hideNoDescription = configPanel.querySelector('#hideNoDescription').checked;
+
         saveConfig(config);
         init();
         alert('已保存设置（系列名已合并到“内容关键词”中，无需单独输入）');
@@ -270,10 +293,13 @@
         configPanelVisible = false;
     });
 
+    // 监听页面变化
     const observer = new MutationObserver(() => {
         init();
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
     init();
+
+    console.log('Pixiv小说自定义屏蔽脚本已加载（2026.3.28 修复无简介判断）');
 })();
