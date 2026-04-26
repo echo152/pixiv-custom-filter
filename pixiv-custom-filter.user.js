@@ -1,40 +1,35 @@
 // ==UserScript==
-// @name         Pixiv小说自定义屏蔽26.3.28
+// @name         Pixiv小说自定义屏蔽26.4.26
 // @namespace    http://tampermonkey.net/
-// @version      2026.3.28
-// @description  屏蔽含有指定关键词、作者名、标签或字数范围外的 Pixiv 项目（系列名已合并到内容关键词中），支持设置面板、导入导出配置、控制台打印
+// @version      2026.4.26
+// @description  修复短简介被误判为无简介 + 内容关键词强化检查系列/标题/简介
 // @author       echo
-// @match        https://www.pixiv.net/tags*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=pixiv.net
+// @match        https://www.pixiv.net/search*
 // @grant        GM_addStyle
-// @run-at       document-start
+// @run-at       document-end
 // @downloadURL  https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
 // @updateURL    https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
 // @license      MIT
 // ==/UserScript==
-
 (function () {
     'use strict';
 
+    /* ================= 配置 ================= */
     const defaultConfig = {
-        contentKeywords: ['无限制ai', 'ai风月', '五等分的雨姐'],
+        contentKeywords: ['无限制ai', 'ai风月', 'ai网站'],
         authorKeywords: ['（', '('],
-        tagKeywords: ['语c', '男同'],
+        tagKeywords: ['语c', '男同', 'BL'],
         minTextLength: 0,
-        maxTextLength: 10000,
-        hideNoDescription: false
+        maxTextLength: 100000,
+        hideNoDescription: true
     };
 
     function getConfig() {
-        const saved = localStorage.getItem('pixivFilterConfig');
-        if (saved) {
-            try {
-                return { ...defaultConfig, ...JSON.parse(saved) };
-            } catch (e) {
-                console.warn('配置解析失败，使用默认值');
-            }
+        try {
+            return { ...defaultConfig, ...JSON.parse(localStorage.getItem('pixivFilterConfig') || '{}') };
+        } catch {
+            return { ...defaultConfig };
         }
-        return { ...defaultConfig };
     }
 
     function saveConfig(config) {
@@ -42,264 +37,205 @@
     }
 
     let config = getConfig();
+    let isHidden = false;
+    let elements = [];
 
+    /* ================= UI样式 ================= */
     GM_addStyle(`
         #pixivFilterBtn, #pixivConfigBtn {
-            position: fixed;
-            left: 10px;
-            z-index: 9999;
-            padding: 8px 12px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            all: unset; position: fixed !important; left: 16px !important; z-index: 2147483647 !important;
+            display: flex !important; align-items: center; justify-content: center;
+            padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+            cursor: pointer; user-select: none; color: #fff;
+            background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
         }
-        #pixivFilterBtn { top: 50%; }
-        #pixivConfigBtn { top: 60%; background: #2196F3; }
+        #pixivFilterBtn { top: 45% !important; }
+        #pixivConfigBtn { top: 52% !important; background: rgba(30,144,255,0.75); }
+        #pixivFilterBtn:hover, #pixivConfigBtn:hover { opacity: 0.9; }
         .hidden-by-ai-toggle { display: none !important; }
+
         #pixivConfigPanel {
-            position: fixed;
-            top: 120px;
-            left: 120px;
-            width: 400px;
-            background: #fff;
-            color: #333;
-            padding: 16px;
-            border-radius: 10px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.3);
-            z-index: 10000;
-            display: none;
-            font-size: 14px;
+            position: fixed; top: 120px; left: 120px; width: 420px; background: #fff;
+            padding: 16px; border-radius: 10px; z-index: 2147483647; display: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
-        #pixivConfigPanel textarea {
-            width: 100%;
-            height: 60px;
-            margin-bottom: 12px;
-        }
-        #pixivConfigPanel input[type=number] {
-            width: 80px;
-            margin-bottom: 12px;
-        }
-        #pixivConfigPanel button {
-            margin-right: 8px;
-        }
+        #pixivConfigPanel textarea { width: 100%; height: 60px; margin-top: 4px; }
     `);
 
-    const configPanel = document.createElement('div');
-    configPanel.id = 'pixivConfigPanel';
-    configPanel.innerHTML = `
-        <div><strong>内容关键词（标题 + 简介 + 系列名）：</strong></div>
-        <textarea id="contentInput">${config.contentKeywords.join('\n')}</textarea>
-        <div><strong>作者关键词：</strong></div>
-        <textarea id="authorInput">${config.authorKeywords.join('\n')}</textarea>
-        <div><strong>标签关键词：</strong></div>
-        <textarea id="tagInput">${config.tagKeywords.join('\n')}</textarea>
-        <div><strong>最小字数：</strong><input type="number" id="minTextLength" value="${config.minTextLength}"></div>
-        <div><strong>最大字数：</strong><input type="number" id="maxTextLength" value="${config.maxTextLength}"></div>
-        <label style="display:block;margin:8px 0;">
-            <input type="checkbox" id="hideNoDescription"${config.hideNoDescription ? ' checked' : ''}>
-            屏蔽无简介小说
-        </label>
-        <br/>
-        <button id="saveBtn">保存</button>
-        <button id="exportBtn">导出</button>
-        <button id="importBtn">导入</button>
-        <button id="closeBtn">关闭</button>
-    `;
-    document.body.appendChild(configPanel);
+    const panel = document.createElement('div');
+    panel.id = 'pixivConfigPanel';
+    panel.innerHTML = `
+<div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+    <div>内容关键词（系列+标题+简介） <textarea id="c">${config.contentKeywords.join('\n')}</textarea></div>
+    <div>作者关键词 <textarea id="a">${config.authorKeywords.join('\n')}</textarea></div>
+    <div>标签关键词 <textarea id="t">${config.tagKeywords.join('\n')}</textarea></div>
+    <div>最小字数 <input type="number" id="min" style="width:100%" value="${config.minTextLength}"></div>
+    <div>最大字数 <input type="number" id="max" style="width:100%" value="${config.maxTextLength}"></div>
+    <label style="display:flex;gap:6px;align-items:center">
+        <input type="checkbox" id="no" ${config.hideNoDescription ? 'checked' : ''}> 隐藏无简介小说
+    </label>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button id="save">保存</button>
+        <button id="close">关闭</button>
+    </div>
+</div>`;
 
-    const toggleButton = document.createElement('button');
-    toggleButton.id = 'pixivFilterBtn';
-    toggleButton.textContent = 'Hide AI';
-    document.body.appendChild(toggleButton);
+    const btn = document.createElement('button'); btn.id = 'pixivFilterBtn'; btn.textContent = 'Hide';
+    const cfgBtn = document.createElement('button'); cfgBtn.id = 'pixivConfigBtn'; cfgBtn.textContent = '设置';
 
-    const configButton = document.createElement('button');
-    configButton.id = 'pixivConfigBtn';
-    configButton.textContent = '关键词设置';
-    document.body.appendChild(configButton);
+    function mountUI() {
+        if (!document.body || document.getElementById('pixivFilterBtn')) return;
+        document.body.appendChild(btn);
+        document.body.appendChild(cfgBtn);
+        document.body.appendChild(panel);
+    }
 
-    let isHidden = false;
-    let configPanelVisible = false;
-    let observedElements = [];
+    /* ================= 工具 ================= */
+    const contains = (text, keys) => {
+        if (!text) return [];
+        text = text.toLowerCase();
+        return keys.filter(k => k && text.includes(k.toLowerCase()));
+    };
 
-    function containsKeyword(text, keywords) {
-        if (!keywords || keywords.length === 0) return [];
-        const lower = text.toLowerCase();
-        const foundKeywords = [];
-        keywords.forEach(k => {
-            if (k && lower.includes(k.toLowerCase())) {
-                foundKeywords.push(k);
+    function findItems() {
+        return document.querySelectorAll('[data-ga4-label="thumbnail"]');
+    }
+
+    /* ================= 空简介判断 - v14 优化 ================= */
+    function hasValidDesc(li) {
+        const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
+        const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
+        const title = titleEl ? titleEl.textContent.trim() : '';
+        const seriesTitle = seriesEl ? seriesEl.textContent.trim() : '';
+
+        // 查找所有可能的简介文本块
+        const textBlocks = li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit], div[style*="ellipsis"], .sc-d3041fc-20');
+
+        let hasMeaningfulDesc = false;
+
+        for (let block of textBlocks) {
+            let text = (block.textContent || '').trim();
+
+            // 排除标题和系列标题
+            if (!text || text === title || text === seriesTitle || text.startsWith(title)) {
+                continue;
             }
-        });
-        return foundKeywords;
-    }
 
-    function getTagTexts(li) {
-        const tags = [];
-        const tagLinks = li.querySelectorAll('div > div:nth-child(2) > div > div:nth-child(3) ul a, ul span span');
-        tagLinks.forEach(tag => {
-            const text = tag.textContent?.trim();
-            if (text) tags.push(text);
-        });
-        return tags;
-    }
-
-    function findTargetElements() {
-        return document.querySelectorAll('#__next ul li');
-    }
-
-    function getDescriptionText(li) {
-        // 优先使用你示例中的最新类名
-        let container = li.querySelector('div.sc-d3041fc-20') ||
-                        li.querySelector('div[class*="sc-d3041fc-20"]') ||
-                        li.querySelector('.charcoal-text-ellipsis[data-line-limit="2"]');
-
-        if (container) {
-            return container.textContent.trim();
-        }
-
-        // 兜底：查找所有可能包含简介的 ellipsis 元素
-        const ellipsisList = li.querySelectorAll('div[style*="--charcoal-text-ellipsis"], .charcoal-text-ellipsis');
-        for (let el of ellipsisList) {
-            const txt = el.textContent.trim();
-            // 避免把标题或短标签误判为简介
-            if (txt && txt.length > 8) {
-                return txt;
+            // 只要简介内容长度 >= 8 个字符，就视为有简介（避免把“写文好累……”这种短简介误判为无）
+            if (text.length >= 8) {
+                hasMeaningfulDesc = true;
+                break;
             }
         }
-        return '';
+
+        // 如果没找到任何有内容的简介块，再检查是否是典型的空容器
+        if (!hasMeaningfulDesc) {
+            const containers = li.querySelectorAll('div[class*="sc-"]');
+            for (let container of containers) {
+                const text = (container.textContent || '').trim();
+                if (text === '') {
+                    const next = container.nextElementSibling;
+                    if (next && next.querySelector('.sc-66169772-0')) {
+                        return false; // 明确是空简介
+                    }
+                }
+            }
+        }
+
+        return hasMeaningfulDesc;
     }
 
-    function toggleElements() {
-        observedElements.forEach(li => {
-            // === 元素提取 ===
-            const titleElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(1) > div > a');
-            const authorElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(2) > a');
-            const authorName = authorElem ? authorElem.textContent.trim() : '';
+    /* ================= 核心逻辑 ================= */
+    function run() {
+        elements.forEach(li => {
+            const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
+            const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
 
-            const textLengthElem = li.querySelector('div > div:nth-child(2) > div > div:nth-child(3) > div > div > div > span');
-            const textLength = textLengthElem ? parseInt(textLengthElem.textContent.replace(/[^\d]/g, '')) : 0;
+            const title = titleEl ? titleEl.textContent.trim() : '';
+            const series = seriesEl ? seriesEl.textContent.trim() : '';
+            const author = li.querySelector('a[href^="/users/"], .gtm-novel-searchpage-result-user')?.textContent.trim() || '';
 
-            const tags = getTagTexts(li);
-            const titleText = titleElem ? titleElem.textContent.trim() : '';
+            const tags = Array.from(li.querySelectorAll('a[href*="tags/"], a.gtm-novel-searchpage-result-tag'))
+                .map(a => (a.textContent || '').trim());
 
-            // 系列名
-            const seriesElem = li.querySelector('a.gtm-novel-searchpage-result-series-title');
-            const seriesName = seriesElem ? seriesElem.textContent.trim() : '';
+            const textLength = (() => {
+                for (let s of li.querySelectorAll('.sc-66169772-0')) {
+                    if (s.textContent.includes('字')) {
+                        return parseInt(s.textContent.replace(/\D/g, '')) || 0;
+                    }
+                }
+                return 0;
+            })();
 
-            // === 改进后的简介提取 ===
-            const contentText = getDescriptionText(li);
+            const desc = (() => {
+                for (let b of li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit], .sc-d3041fc-20')) {
+                    let t = (b.textContent || '').trim();
+                    if (t.length > 8 && t !== title && t !== series) {
+                        return t.replace(/[\s\n\r\u3000]+/g, ' ').trim();
+                    }
+                }
+                return '';
+            })();
 
-            // === 匹配判断 ===
-            const matchedTags = containsKeyword(tags.join(' '), config.tagKeywords);
-            const matchedAuthor = containsKeyword(authorName, config.authorKeywords);
-            const matchedContent = containsKeyword(contentText, config.contentKeywords);
-            const matchedTitle = containsKeyword(titleText, config.contentKeywords);
-            const matchedSeries = containsKeyword(seriesName, config.contentKeywords);
+            let reasons = [];
 
-            const lengthTooShort = textLength < config.minTextLength;
-            const lengthTooLong = textLength > config.maxTextLength;
+            // 内容关键词检查（系列 + 标题 + 简介）
+            if (contains(series, config.contentKeywords).length) reasons.push(`系列: ${contains(series, config.contentKeywords).join(',')}`);
+            if (contains(title, config.contentKeywords).length) reasons.push(`标题: ${contains(title, config.contentKeywords).join(',')}`);
+            if (contains(desc, config.contentKeywords).length) reasons.push(`简介: ${contains(desc, config.contentKeywords).join(',')}`);
 
-            // 改进后的无简介判断
-            const noDescription = config.hideNoDescription &&
-                (contentText.length === 0 ||
-                 contentText.length < 8 ||
-                 /^[\s　]*$/.test(contentText));
+            // 全文本兜底
+            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) {
+                reasons.push('全文含关键词');
+            }
 
-            const shouldHide = isHidden && (
-                matchedAuthor.length > 0 ||
-                matchedContent.length > 0 ||
-                matchedTitle.length > 0 ||
-                matchedSeries.length > 0 ||
-                matchedTags.length > 0 ||
-                lengthTooShort ||
-                lengthTooLong ||
-                noDescription
-            );
+            if (contains(author, config.authorKeywords).length) reasons.push(`作者关键词`);
+            if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签关键词`);
+            if (textLength < config.minTextLength) reasons.push(`字数过少(${textLength})`);
+            if (textLength > config.maxTextLength) reasons.push(`字数过多(${textLength})`);
+            if (config.hideNoDescription && !hasValidDesc(li)) reasons.push('无简介');
+
+            const shouldHide = isHidden && reasons.length > 0;
 
             li.classList.toggle('hidden-by-ai-toggle', shouldHide);
 
             if (shouldHide) {
-                let logMessage = '隐藏作品：';
-                if (matchedContent.length > 0) logMessage += `[内容: ${matchedContent.join(', ')}] `;
-                if (matchedTitle.length > 0) logMessage += `[标题: ${matchedTitle.join(', ')}] `;
-                if (matchedSeries.length > 0) logMessage += `[系列: ${matchedSeries.join(', ')}] `;
-                if (matchedAuthor.length > 0) logMessage += `[作者: ${matchedAuthor.join(', ')}] `;
-                if (matchedTags.length > 0) logMessage += `[标签: ${matchedTags.join(', ')}] `;
-                if (lengthTooShort) logMessage += `[字数过少: ${textLength}] `;
-                if (lengthTooLong) logMessage += `[字数过多: ${textLength}] `;
-                if (noDescription) logMessage += `[无简介 | 长度:${contentText.length}] `;
-
-                console.log(`%c${authorName} ${logMessage}（系列：${seriesName}）`, 'color: #d32f2f;');
-                console.log(`简介预览: "${contentText.substring(0, 80)}${contentText.length > 80 ? '...' : ''}"`);
+                console.log(`🛑 已屏蔽 | 标题: ${title} | 系列: ${series || '无'} | 字数: ${textLength} | 原因: ${reasons.join(' | ')}`);
             }
         });
     }
 
     function init() {
-        observedElements = Array.from(findTargetElements());
-        toggleElements();
+        elements = Array.from(findItems());
+        run();
     }
 
-    // 按钮事件
-    toggleButton.addEventListener('click', function () {
-        isHidden = !isHidden;
-        toggleButton.textContent = isHidden ? 'Show AI' : 'Hide AI';
-        toggleElements();
-    });
+    /* ================= 事件 ================= */
+    btn.onclick = () => { isHidden = !isHidden; btn.textContent = isHidden ? 'Show' : 'Hide'; run(); };
+    cfgBtn.onclick = () => { panel.style.display = panel.style.display === 'block' ? 'none' : 'block'; };
 
-    configButton.addEventListener('click', function () {
-        configPanelVisible = !configPanelVisible;
-        configPanel.style.display = configPanelVisible ? 'block' : 'none';
-    });
-
-    configPanel.querySelector('#saveBtn').addEventListener('click', () => {
-        config.contentKeywords = configPanel.querySelector('#contentInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-        config.authorKeywords = configPanel.querySelector('#authorInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-        config.tagKeywords = configPanel.querySelector('#tagInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-        config.minTextLength = parseInt(configPanel.querySelector('#minTextLength').value) || 0;
-        config.maxTextLength = parseInt(configPanel.querySelector('#maxTextLength').value) || 100000;
-        config.hideNoDescription = configPanel.querySelector('#hideNoDescription').checked;
-
+    panel.querySelector('#save').onclick = () => {
+        config = {
+            contentKeywords: panel.querySelector('#c').value.split('\n').filter(Boolean),
+            authorKeywords: panel.querySelector('#a').value.split('\n').filter(Boolean),
+            tagKeywords: panel.querySelector('#t').value.split('\n').filter(Boolean),
+            minTextLength: +panel.querySelector('#min').value || 0,
+            maxTextLength: +panel.querySelector('#max').value || 999999,
+            hideNoDescription: panel.querySelector('#no').checked
+        };
         saveConfig(config);
         init();
-        alert('已保存设置（系列名已合并到“内容关键词”中，无需单独输入）');
-    });
+        alert('配置已保存');
+    };
 
-    configPanel.querySelector('#exportBtn').addEventListener('click', () => {
-        const exportData = JSON.stringify(config, null, 2);
-        navigator.clipboard.writeText(exportData).then(() => alert('配置已复制到剪贴板'));
-    });
+    panel.querySelector('#close').onclick = () => { panel.style.display = 'none'; };
 
-    configPanel.querySelector('#importBtn').addEventListener('click', () => {
-        const input = prompt('请粘贴你导出的配置JSON：');
-        if (input) {
-            try {
-                const imported = JSON.parse(input);
-                config = { ...defaultConfig, ...imported };
-                saveConfig(config);
-                location.reload();
-            } catch (e) {
-                alert('导入失败，JSON 格式有误。');
-            }
-        }
-    });
+    setInterval(mountUI, 2000);
+    new MutationObserver(() => setTimeout(init, 600)).observe(document.body, { childList: true, subtree: true });
 
-    configPanel.querySelector('#closeBtn').addEventListener('click', () => {
-        configPanel.style.display = 'none';
-        configPanelVisible = false;
-    });
+    mountUI();
+    setTimeout(init, 1000);
 
-    // 监听页面变化
-    const observer = new MutationObserver(() => {
-        init();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    init();
-
-    console.log('Pixiv小说自定义屏蔽脚本已加载（2026.3.28 修复无简介判断）');
+    console.log('✅ Pixiv小说屏蔽脚本 v14 已启动（短简介误判问题已修复）');
 })();
