@@ -115,7 +115,6 @@
         if (authorEl) {
             let name = (authorEl.textContent || '').trim();
             if (name && name !== title && name !== series && name.length < 30) {
-                console.log(`[Author Debug] GTM提取: "${name}"`);
                 return name;
             }
         }
@@ -125,7 +124,6 @@
         if (authorEl) {
             let name = (authorEl.textContent || '').trim();
             if (name && name !== title && name !== series && name.length < 30) {
-                console.log(`[Author Debug] href提取: "${name}"`);
                 return name;
             }
         }
@@ -135,7 +133,6 @@
         for (let link of userLinks) {
             let name = (link.textContent || '').trim();
             if (name && name.length > 1 && name.length < 25 && name !== title && name !== series) {
-                console.log(`[Author Debug] 兜底提取: "${name}"`);
                 return name;
             }
         }
