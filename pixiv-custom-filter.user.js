@@ -11,6 +11,7 @@
 // @updateURL    https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
 // @license      MIT
 // ==/UserScript==
+
 (function () {
     'use strict';
 
@@ -102,48 +103,79 @@
         return document.querySelectorAll('[data-ga4-label="thumbnail"]');
     }
 
-    /* ================= 空简介判断 - v14 优化 ================= */
+    /* ================= 作者提取 - v18 严格版 ================= */
+    function getAuthor(li) {
+        const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
+        const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
+        const title = titleEl ? titleEl.textContent.trim() : '';
+        const series = seriesEl ? seriesEl.textContent.trim() : '';
+
+        // 1. 最稳定：GTM 作者类
+        let authorEl = li.querySelector('.gtm-novel-searchpage-result-user');
+        if (authorEl) {
+            let name = (authorEl.textContent || '').trim();
+            if (name && name !== title && name !== series && name.length < 30) {
+                console.log(`[Author Debug] GTM提取: "${name}"`);
+                return name;
+            }
+        }
+
+        // 2. href="/users/" 的链接（作者链接）
+        authorEl = li.querySelector('a[href^="/users/"]');
+        if (authorEl) {
+            let name = (authorEl.textContent || '').trim();
+            if (name && name !== title && name !== series && name.length < 30) {
+                console.log(`[Author Debug] href提取: "${name}"`);
+                return name;
+            }
+        }
+
+        // 3. 兜底：查找第二个用户相关的链接（避免取到标题）
+        const userLinks = li.querySelectorAll('a[href^="/users/"], a.gtm-novel-searchpage-result-user');
+        for (let link of userLinks) {
+            let name = (link.textContent || '').trim();
+            if (name && name.length > 1 && name.length < 25 && name !== title && name !== series) {
+                console.log(`[Author Debug] 兜底提取: "${name}"`);
+                return name;
+            }
+        }
+
+        console.log(`[Author Debug] 未提取到有效作者 (标题: ${title})`);
+        return '';
+    }
+
+    /* ================= 简介判断 ================= */
     function hasValidDesc(li) {
         const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
         const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
         const title = titleEl ? titleEl.textContent.trim() : '';
         const seriesTitle = seriesEl ? seriesEl.textContent.trim() : '';
 
-        // 查找所有可能的简介文本块
-        const textBlocks = li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit], div[style*="ellipsis"], .sc-d3041fc-20');
-
-        let hasMeaningfulDesc = false;
+        const textBlocks = li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit]');
 
         for (let block of textBlocks) {
             let text = (block.textContent || '').trim();
-
-            // 排除标题和系列标题
-            if (!text || text === title || text === seriesTitle || text.startsWith(title)) {
-                continue;
-            }
-
-            // 只要简介内容长度 >= 8 个字符，就视为有简介（避免把“写文好累……”这种短简介误判为无）
-            if (text.length >= 8) {
-                hasMeaningfulDesc = true;
-                break;
-            }
+            if (!text || text === title || text === seriesTitle || text.startsWith(title)) continue;
+            if (text.length >= 8) return true;
         }
 
-        // 如果没找到任何有内容的简介块，再检查是否是典型的空容器
-        if (!hasMeaningfulDesc) {
-            const containers = li.querySelectorAll('div[class*="sc-"]');
-            for (let container of containers) {
-                const text = (container.textContent || '').trim();
-                if (text === '') {
-                    const next = container.nextElementSibling;
-                    if (next && next.querySelector('.sc-66169772-0')) {
-                        return false; // 明确是空简介
-                    }
-                }
+        // 空容器检测
+        for (let container of li.querySelectorAll('div')) {
+            if ((container.textContent || '').trim() === '') {
+                const next = container.nextElementSibling;
+                if (next && next.querySelector('.sc-66169772-0')) return false;
             }
         }
+        return false;
+    }
 
-        return hasMeaningfulDesc;
+    function getTextLength(li) {
+        for (let s of li.querySelectorAll('.sc-66169772-0')) {
+            if (s.textContent.includes('字')) {
+                return parseInt(s.textContent.replace(/\D/g, '')) || 0;
+            }
+        }
+        return 0;
     }
 
     /* ================= 核心逻辑 ================= */
@@ -154,22 +186,15 @@
 
             const title = titleEl ? titleEl.textContent.trim() : '';
             const series = seriesEl ? seriesEl.textContent.trim() : '';
-            const author = li.querySelector('a[href^="/users/"], .gtm-novel-searchpage-result-user')?.textContent.trim() || '';
+            const author = getAuthor(li);
 
             const tags = Array.from(li.querySelectorAll('a[href*="tags/"], a.gtm-novel-searchpage-result-tag'))
                 .map(a => (a.textContent || '').trim());
 
-            const textLength = (() => {
-                for (let s of li.querySelectorAll('.sc-66169772-0')) {
-                    if (s.textContent.includes('字')) {
-                        return parseInt(s.textContent.replace(/\D/g, '')) || 0;
-                    }
-                }
-                return 0;
-            })();
+            const textLength = getTextLength(li);
 
             const desc = (() => {
-                for (let b of li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit], .sc-d3041fc-20')) {
+                for (let b of li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit]')) {
                     let t = (b.textContent || '').trim();
                     if (t.length > 8 && t !== title && t !== series) {
                         return t.replace(/[\s\n\r\u3000]+/g, ' ').trim();
@@ -180,17 +205,15 @@
 
             let reasons = [];
 
-            // 内容关键词检查（系列 + 标题 + 简介）
-            if (contains(series, config.contentKeywords).length) reasons.push(`系列: ${contains(series, config.contentKeywords).join(',')}`);
-            if (contains(title, config.contentKeywords).length) reasons.push(`标题: ${contains(title, config.contentKeywords).join(',')}`);
-            if (contains(desc, config.contentKeywords).length) reasons.push(`简介: ${contains(desc, config.contentKeywords).join(',')}`);
+            if (contains(series, config.contentKeywords).length) reasons.push(`系列关键词`);
+            if (contains(title, config.contentKeywords).length) reasons.push(`标题关键词`);
+            if (contains(desc, config.contentKeywords).length) reasons.push(`简介关键词`);
+            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) reasons.push('全文含关键词');
 
-            // 全文本兜底
-            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) {
-                reasons.push('全文含关键词');
+            if (author && contains(author, config.authorKeywords).length) {
+                reasons.push(`作者关键词: ${author}`);
             }
 
-            if (contains(author, config.authorKeywords).length) reasons.push(`作者关键词`);
             if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签关键词`);
             if (textLength < config.minTextLength) reasons.push(`字数过少(${textLength})`);
             if (textLength > config.maxTextLength) reasons.push(`字数过多(${textLength})`);
@@ -201,7 +224,7 @@
             li.classList.toggle('hidden-by-ai-toggle', shouldHide);
 
             if (shouldHide) {
-                console.log(`🛑 已屏蔽 | 标题: ${title} | 系列: ${series || '无'} | 字数: ${textLength} | 原因: ${reasons.join(' | ')}`);
+                console.log(`🛑 已屏蔽 | 标题: ${title} | 作者: ${author || '未知'} | 原因: ${reasons.join(' | ')}`);
             }
         });
     }
@@ -237,5 +260,5 @@
     mountUI();
     setTimeout(init, 1000);
 
-    console.log('✅ Pixiv小说屏蔽脚本 v14 已启动（短简介误判问题已修复）');
+    console.log('✅ Pixiv小说屏蔽脚本 v18 已启动（作者提取已严格区分标题/系列）');
 })();
