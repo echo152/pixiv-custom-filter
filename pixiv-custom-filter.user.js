@@ -5,6 +5,8 @@
 // @description  修复短简介被误判为无简介 + 内容关键词强化检查系列/标题/简介
 // @author       echo
 // @match        https://www.pixiv.net/search*
+// @match        https://www.pixiv.net/tag*
+
 // @grant        GM_addStyle
 // @run-at       document-end
 // @downloadURL  https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
