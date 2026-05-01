@@ -1,12 +1,11 @@
 // ==UserScript==
-// @name         Pixiv小说自定义屏蔽26.4.26
+// @name         Pixiv小说自定义屏蔽26.5.1
 // @namespace    http://tampermonkey.net/
-// @version      2026.4.26
+// @version      2026.5.1
 // @description  修复短简介被误判为无简介 + 内容关键词强化检查系列/标题/简介
 // @author       echo
 // @match        https://www.pixiv.net/search*
 // @match        https://www.pixiv.net/tag*
-
 // @grant        GM_addStyle
 // @run-at       document-end
 // @downloadURL  https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
@@ -62,14 +61,16 @@
             position: fixed; top: 120px; left: 120px; width: 420px; background: #fff;
             padding: 16px; border-radius: 10px; z-index: 2147483647; display: none;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            color: #333;
         }
-        #pixivConfigPanel textarea { width: 100%; height: 60px; margin-top: 4px; }
+        #pixivConfigPanel textarea { width: 100%; height: 60px; margin-top: 4px; border: 1px solid #ccc; border-radius: 4px; }
     `);
 
     const panel = document.createElement('div');
     panel.id = 'pixivConfigPanel';
     panel.innerHTML = `
 <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+    <div style="font-weight:bold; border-bottom:1px solid #eee; padding-bottom:5px">脚本配置</div>
     <div>内容关键词（系列+标题+简介） <textarea id="c">${config.contentKeywords.join('\n')}</textarea></div>
     <div>作者关键词 <textarea id="a">${config.authorKeywords.join('\n')}</textarea></div>
     <div>标签关键词 <textarea id="t">${config.tagKeywords.join('\n')}</textarea></div>
@@ -79,8 +80,8 @@
         <input type="checkbox" id="no" ${config.hideNoDescription ? 'checked' : ''}> 隐藏无简介小说
     </label>
     <div style="display:flex;justify-content:flex-end;gap:8px">
-        <button id="save">保存</button>
-        <button id="close">关闭</button>
+        <button id="save" style="padding:4px 12px; cursor:pointer">保存</button>
+        <button id="close" style="padding:4px 12px; cursor:pointer">关闭</button>
     </div>
 </div>`;
 
@@ -94,6 +95,26 @@
         document.body.appendChild(panel);
     }
 
+    /* ================= 广告屏蔽逻辑 (新加) ================= */
+    function removePremiumAds() {
+        // 查找包含特定 iframe 的高级会员引导容器
+        const adContainers = document.querySelectorAll('div.mx-auto[class*="[width:calc"]');
+        adContainers.forEach(el => {
+            if (el.innerHTML.includes('premium_lp') || el.querySelector('iframe[src*="premium_lp"]')) {
+                el.remove();
+            }
+        });
+
+        // 备选方案：通过内部特定的“成为pixiv高级会员”文字匹配
+        const buttons = document.querySelectorAll('button.charcoal-button');
+        buttons.forEach(btn => {
+            if (btn.textContent.includes('成为pixiv高级会员')) {
+                const wrapper = btn.closest('div.mx-auto');
+                if (wrapper) wrapper.remove();
+            }
+        });
+    }
+
     /* ================= 工具 ================= */
     const contains = (text, keys) => {
         if (!text) return [];
@@ -105,41 +126,30 @@
         return document.querySelectorAll('[data-ga4-label="thumbnail"]');
     }
 
-    /* ================= 作者提取 - v18 严格版 ================= */
+    /* ================= 作者提取 ================= */
     function getAuthor(li) {
         const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
         const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
         const title = titleEl ? titleEl.textContent.trim() : '';
         const series = seriesEl ? seriesEl.textContent.trim() : '';
 
-        // 1. 最稳定：GTM 作者类
         let authorEl = li.querySelector('.gtm-novel-searchpage-result-user');
         if (authorEl) {
             let name = (authorEl.textContent || '').trim();
-            if (name && name !== title && name !== series && name.length < 30) {
-                return name;
-            }
+            if (name && name !== title && name !== series && name.length < 30) return name;
         }
 
-        // 2. href="/users/" 的链接（作者链接）
         authorEl = li.querySelector('a[href^="/users/"]');
         if (authorEl) {
             let name = (authorEl.textContent || '').trim();
-            if (name && name !== title && name !== series && name.length < 30) {
-                return name;
-            }
+            if (name && name !== title && name !== series && name.length < 30) return name;
         }
 
-        // 3. 兜底：查找第二个用户相关的链接（避免取到标题）
         const userLinks = li.querySelectorAll('a[href^="/users/"], a.gtm-novel-searchpage-result-user');
         for (let link of userLinks) {
             let name = (link.textContent || '').trim();
-            if (name && name.length > 1 && name.length < 25 && name !== title && name !== series) {
-                return name;
-            }
+            if (name && name.length > 1 && name.length < 25 && name !== title && name !== series) return name;
         }
-
-        console.log(`[Author Debug] 未提取到有效作者 (标题: ${title})`);
         return '';
     }
 
@@ -157,14 +167,6 @@
             if (!text || text === title || text === seriesTitle || text.startsWith(title)) continue;
             if (text.length >= 8) return true;
         }
-
-        // 空容器检测
-        for (let container of li.querySelectorAll('div')) {
-            if ((container.textContent || '').trim() === '') {
-                const next = container.nextElementSibling;
-                if (next && next.querySelector('.sc-66169772-0')) return false;
-            }
-        }
         return false;
     }
 
@@ -179,53 +181,41 @@
 
     /* ================= 核心逻辑 ================= */
     function run() {
+        // 执行原本的屏蔽逻辑
         elements.forEach(li => {
             const titleEl = li.querySelector('.gtm-novel-searchpage-result-title');
             const seriesEl = li.querySelector('.gtm-novel-searchpage-result-series-title');
-
             const title = titleEl ? titleEl.textContent.trim() : '';
             const series = seriesEl ? seriesEl.textContent.trim() : '';
             const author = getAuthor(li);
-
-            const tags = Array.from(li.querySelectorAll('a[href*="tags/"], a.gtm-novel-searchpage-result-tag'))
-                .map(a => (a.textContent || '').trim());
-
+            const tags = Array.from(li.querySelectorAll('a[href*="tags/"], a.gtm-novel-searchpage-result-tag')).map(a => (a.textContent || '').trim());
             const textLength = getTextLength(li);
 
             const desc = (() => {
                 for (let b of li.querySelectorAll('.charcoal-text-ellipsis, [data-line-limit]')) {
                     let t = (b.textContent || '').trim();
-                    if (t.length > 8 && t !== title && t !== series) {
-                        return t.replace(/[\s\n\r\u3000]+/g, ' ').trim();
-                    }
+                    if (t.length > 8 && t !== title && t !== series) return t.replace(/[\s\n\r\u3000]+/g, ' ').trim();
                 }
                 return '';
             })();
 
             let reasons = [];
-
-            if (contains(series, config.contentKeywords).length) reasons.push(`系列关键词`);
-            if (contains(title, config.contentKeywords).length) reasons.push(`标题关键词`);
-            if (contains(desc, config.contentKeywords).length) reasons.push(`简介关键词`);
-            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) reasons.push('全文含关键词');
-
-            if (author && contains(author, config.authorKeywords).length) {
-                reasons.push(`作者关键词: ${author}`);
-            }
-
-            if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签关键词`);
-            if (textLength < config.minTextLength) reasons.push(`字数过少(${textLength})`);
-            if (textLength > config.maxTextLength) reasons.push(`字数过多(${textLength})`);
+            if (contains(series, config.contentKeywords).length) reasons.push(`系列`);
+            if (contains(title, config.contentKeywords).length) reasons.push(`标题`);
+            if (contains(desc, config.contentKeywords).length) reasons.push(`简介`);
+            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) reasons.push('全文关键词');
+            if (author && contains(author, config.authorKeywords).length) reasons.push(`作者: ${author}`);
+            if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签`);
+            if (textLength < config.minTextLength) reasons.push(`太少(${textLength})`);
+            if (textLength > config.maxTextLength) reasons.push(`太多(${textLength})`);
             if (config.hideNoDescription && !hasValidDesc(li)) reasons.push('无简介');
 
             const shouldHide = isHidden && reasons.length > 0;
-
             li.classList.toggle('hidden-by-ai-toggle', shouldHide);
-
-            if (shouldHide) {
-                console.log(`🛑 已屏蔽 | 标题: ${title} | 作者: ${author || '未知'} | 原因: ${reasons.join(' | ')}`);
-            }
         });
+
+        // 无论 Hide 按钮状态如何，强制移除广告元素
+        removePremiumAds();
     }
 
     function init() {
@@ -253,11 +243,21 @@
 
     panel.querySelector('#close').onclick = () => { panel.style.display = 'none'; };
 
-    setInterval(mountUI, 2000);
-    new MutationObserver(() => setTimeout(init, 600)).observe(document.body, { childList: true, subtree: true });
+    // 持续监控与初始化
+    setInterval(() => {
+        mountUI();
+        removePremiumAds(); // 增强：每2秒强制检查一次广告
+    }, 2000);
+
+    new MutationObserver(() => {
+        setTimeout(() => {
+            init();
+            removePremiumAds();
+        }, 300);
+    }).observe(document.body, { childList: true, subtree: true });
 
     mountUI();
     setTimeout(init, 1000);
 
-    console.log('✅ Pixiv小说屏蔽脚本 v18 已启动（作者提取已严格区分标题/系列）');
+    console.log('✅ Pixiv小说屏蔽脚本 已启动');
 })();
