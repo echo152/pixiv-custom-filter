@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         Pixiv小说自定义屏蔽26.5.1
+// @name         Pixiv小说自定义屏蔽
 // @namespace    http://tampermonkey.net/
-// @version      2026.5.1
-// @description  修复短简介被误判为无简介 + 内容关键词强化检查系列/标题/简介
+// @version      2026.7.30
+// @description  优化了下字数匹配逻辑，优化了屏蔽开通会员的隐藏逻辑
 // @author       echo
 // @match        https://www.pixiv.net/search*
 // @match        https://www.pixiv.net/tag*
+// @match        https://www.pixiv.net/novel/bookmarks.php*
 // @grant        GM_addStyle
 // @run-at       document-end
 // @downloadURL  https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
 // @updateURL    https://raw.githubusercontent.com/echo152/pixiv-custom-filter/main/pixiv-custom-filter.user.js
-// @license      MIT
 // ==/UserScript==
 
 (function () {
@@ -95,22 +95,32 @@
         document.body.appendChild(panel);
     }
 
-    /* ================= 广告屏蔽逻辑 (新加) ================= */
+    /* ================= 广告屏蔽逻辑 (优化版) ================= */
     function removePremiumAds() {
-        // 查找包含特定 iframe 的高级会员引导容器
-        const adContainers = document.querySelectorAll('div.mx-auto[class*="[width:calc"]');
-        adContainers.forEach(el => {
-            if (el.innerHTML.includes('premium_lp') || el.querySelector('iframe[src*="premium_lp"]')) {
-                el.remove();
+        // 1. 删除嵌入的广告 iframe
+        document.querySelectorAll('iframe[src*="premium_lp"]').forEach(iframe => iframe.remove());
+
+        // 2. 精确匹配并删除会员宣传大横幅（匹配跳转链接为 premium/lead/lp 的容器）
+        document.querySelectorAll('a[href*="/premium/lead/lp"]').forEach(link => {
+            const container = link.closest('.mx-auto') || link.closest('.relative') || link.parentElement;
+            if (container) {
+                container.remove();
             }
         });
 
-        // 备选方案：通过内部特定的“成为pixiv高级会员”文字匹配
-        const buttons = document.querySelectorAll('button.charcoal-button');
-        buttons.forEach(btn => {
-            if (btn.textContent.includes('成为pixiv高级会员')) {
-                const wrapper = btn.closest('div.mx-auto');
-                if (wrapper) wrapper.remove();
+        // 3. 清除其他包含会员推广文案的提示组件（限定范围，防止误删分类导航和筛选条件栏）
+        document.querySelectorAll('aside, div').forEach(el => {
+            if (el.children.length <= 6) {
+                const text = el.textContent || '';
+                if (
+                    (text.includes('成为pixiv高级会员') || text.includes('开通pixiv高级会员')) &&
+                    (text.includes('使用相关功能') || text.includes('使用收藏内搜索')) &&
+                    !el.querySelector('nav') &&
+                    !el.querySelector('button[data-ga4-label]')
+                ) {
+                    const target = el.closest('.mx-auto') || el;
+                    target.remove();
+                }
             }
         });
     }
@@ -171,9 +181,27 @@
     }
 
     function getTextLength(li) {
-        for (let s of li.querySelectorAll('.sc-66169772-0')) {
-            if (s.textContent.includes('字')) {
-                return parseInt(s.textContent.replace(/\D/g, '')) || 0;
+        const divs = [...li.querySelectorAll("div")];
+
+        for (const div of divs) {
+            const spans = div.querySelectorAll(":scope > span");
+            if (spans.length < 2) continue;
+
+            const first = spans[0].textContent.trim();
+            const second = spans[1].textContent.trim();
+
+            if (
+                /[\d,.]+万?字/.test(first) &&
+                /分钟/.test(second)
+            ) {
+                const match = first.match(/([\d,.]+)(万)?字/);
+                if (!match) return 0;
+
+                let length = parseFloat(match[1].replace(/,/g, ''));
+                if (match[2]) {
+                    length *= 10000;
+                }
+                return Math.floor(length);
             }
         }
         return 0;
@@ -200,12 +228,12 @@
             })();
 
             let reasons = [];
-            if (contains(series, config.contentKeywords).length) reasons.push(`系列`);
-            if (contains(title, config.contentKeywords).length) reasons.push(`标题`);
-            if (contains(desc, config.contentKeywords).length) reasons.push(`简介`);
-            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) reasons.push('全文关键词');
+            if (contains(series, config.contentKeywords).length) reasons.push(`系列`+contains(series, config.contentKeywords));
+            if (contains(title, config.contentKeywords).length) reasons.push(`标题`+contains(title, config.contentKeywords));
+            if (contains(desc, config.contentKeywords).length) reasons.push(`简介`+contains(desc, config.contentKeywords));
+            if (reasons.length === 0 && contains(li.textContent || '', config.contentKeywords).length) reasons.push('全文关键词'+contains(li.textContent || '', config.contentKeywords));
             if (author && contains(author, config.authorKeywords).length) reasons.push(`作者: ${author}`);
-            if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签`);
+            if (contains(tags.join(' '), config.tagKeywords).length) reasons.push(`标签`+contains(tags.join(' '), config.tagKeywords));
             if (textLength < config.minTextLength) reasons.push(`太少(${textLength})`);
             if (textLength > config.maxTextLength) reasons.push(`太多(${textLength})`);
             if (config.hideNoDescription && !hasValidDesc(li)) reasons.push('无简介');
@@ -214,7 +242,7 @@
             li.classList.toggle('hidden-by-ai-toggle', shouldHide);
         });
 
-        // 无论 Hide 按钮状态如何，强制移除广告元素
+        // 强制移除广告元素
         removePremiumAds();
     }
 
@@ -246,7 +274,7 @@
     // 持续监控与初始化
     setInterval(() => {
         mountUI();
-        removePremiumAds(); // 增强：每2秒强制检查一次广告
+        removePremiumAds(); // 每2秒强查一次广告
     }, 2000);
 
     new MutationObserver(() => {
@@ -259,5 +287,5 @@
     mountUI();
     setTimeout(init, 1000);
 
-    console.log('✅ Pixiv小说屏蔽脚本 已启动');
+    console.log('✅ Pixiv小说屏蔽脚本已启动');
 })();
