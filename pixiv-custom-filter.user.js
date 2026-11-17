@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv小说自定义屏蔽
 // @namespace    http://tampermonkey.net/
-// @version      2026.7.31
+// @version      2026.11.17
 // @description  优化了下字数匹配逻辑，优化了屏蔽开通会员的隐藏逻辑（已补回导入/导出配置）
 // @author       echo
 // @match        https://www.pixiv.net/search*
