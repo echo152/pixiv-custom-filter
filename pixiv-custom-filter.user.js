@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Pixiv小说自定义屏蔽
 // @namespace    http://tampermonkey.net/
-// @version      2026.7.30
-// @description  优化了下字数匹配逻辑，优化了屏蔽开通会员的隐藏逻辑
+// @version      2026.7.31
+// @description  优化了下字数匹配逻辑，优化了屏蔽开通会员的隐藏逻辑（已补回导入/导出配置）
 // @author       echo
 // @match        https://www.pixiv.net/search*
 // @match        https://www.pixiv.net/tag*
@@ -80,6 +80,8 @@
         <input type="checkbox" id="no" ${config.hideNoDescription ? 'checked' : ''}> 隐藏无简介小说
     </label>
     <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button id="export" style="padding:4px 12px; cursor:pointer">导出</button>
+        <button id="import" style="padding:4px 12px; cursor:pointer">导入</button>
         <button id="save" style="padding:4px 12px; cursor:pointer">保存</button>
         <button id="close" style="padding:4px 12px; cursor:pointer">关闭</button>
     </div>
@@ -267,6 +269,44 @@
         saveConfig(config);
         init();
         alert('配置已保存');
+    };
+
+    /* --- 导出配置（参考旧版逻辑） --- */
+    panel.querySelector('#export').onclick = () => {
+        const exportData = JSON.stringify(config, null, 2);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(exportData)
+                .then(() => alert('配置已复制到剪贴板'))
+                .catch(() => prompt('复制失败，请手动复制以下配置：', exportData));
+        } else {
+            prompt('请手动复制以下配置：', exportData);
+        }
+    };
+
+    /* --- 导入配置（参考旧版逻辑） --- */
+    panel.querySelector('#import').onclick = () => {
+        const input = prompt('请粘贴你导出的配置JSON：');
+        if (!input) return;
+        try {
+            const imported = JSON.parse(input);
+            if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
+                throw new Error('不是有效的配置对象');
+            }
+            const merged = { ...defaultConfig, ...imported };
+            // 兜底校验，避免导入格式不对时把后面的过滤逻辑弄坏
+            ['contentKeywords', 'authorKeywords', 'tagKeywords'].forEach(k => {
+                merged[k] = Array.isArray(merged[k]) ? merged[k].map(v => String(v)).filter(Boolean) : defaultConfig[k];
+            });
+            ['minTextLength', 'maxTextLength'].forEach(k => {
+                merged[k] = Number.isFinite(+merged[k]) ? +merged[k] : defaultConfig[k];
+            });
+            merged.hideNoDescription = !!merged.hideNoDescription;
+            config = merged;
+            saveConfig(config);
+            location.reload();
+        } catch {
+            alert('导入失败，JSON 格式有误。');
+        }
     };
 
     panel.querySelector('#close').onclick = () => { panel.style.display = 'none'; };
